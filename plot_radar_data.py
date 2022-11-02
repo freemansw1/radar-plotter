@@ -631,7 +631,8 @@ def load_metar_data(metar_dir,  start_datetime, end_datetime, states=['co', 'wy'
         state_dfs.append(station_during_valid_time)
         #df = df.append(station_during_valid_time, ignore_index=True)
     combined_df = pd.concat(state_dfs)
-    return pd.concat(state_dfs)
+    combined_df = combined_df.reset_index() # to prevent duplicate indices when plotting radar data over long time periods
+    return combined_df
 
 
 # Download radar data from AWS S3 if not already downloaded
