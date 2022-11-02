@@ -1,24 +1,25 @@
+# matlab plotting libraries
 from asyncio import Task
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-import pyart
+import pyart # radar plotting
 import numpy as np
 from datetime import timedelta
 from datetime import datetime
 import datetime
 import pandas as pd
 import netCDF4 as nc
-import glob
+import glob # for using wildcards etc.
 import cartopy.crs as ccrs
 import cartopy.feature as feat
-
 import cartopy
 from pyart.graph import cm
 import pytz
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import matplotlib.ticker as mticker
 
+# met plotting libraries
 from metpy.calc import wind_components
 from metpy.plots import StationPlot, StationPlotLayout, simple_layout
 from metpy.units import units
@@ -30,19 +31,33 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 import os
+# libraries for parallelization
 from jug import TaskGenerator
 import jug
 
 # User options
 
+# Radar code
 radarname = 'KCYS'
-# Where do you want to download the radar data to?
-# If this directory doesn't exist, the script will create it. 
+# Radar variable to plot, options: 'reflectivity', 'velocity'
+var_to_plot = 'reflectivity'
+
+# datetimes in UTC
+start_datetime = datetime.datetime(2022, 6, 1, 6)
+end_datetime = datetime.datetime(2022, 6, 19, 6)
+
+# download_dir: Where do you want to download the radar data to?
+# If this directory doesn't exist, the script will create it.
 download_dir='./'+radarname+"_data/"
-# Where do you want the plots to output to?
-plot_dir = './'+radarname+"_plots_vel/"
-# what prefix to add to the output file names
-plot_prefix = radarname+'_vel05'
+# plot_dir: Where do you want the plots to output to?
+#   If this directory doesn't exist, the script will create it.
+# plot_prefix: what prefix to add to the output file names
+if var_to_plot == 'reflectivity': 
+    plot_dir = './'+radarname+"_plots_refl/"
+    plot_prefix = radarname+'_ref05'
+elif var_to_plot == 'velocity':
+    plot_dir = './'+radarname+"_plots_vel/"
+    plot_prefix = radarname+'_vel05'
 # Where are the radiosonde files?
 sonde_dir = './sonde_data/'
 # Metar files from https://mesonet.agron.iastate.edu/request/download.phtml?
@@ -51,32 +66,30 @@ sonde_dir = './sonde_data/'
 metar_dir = './metar_data/'
 
 # topography file (using ETOPO1 from: https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO1/data/ice_surface/grid_registered/netcdf/)
-topography_file = './ETOPO1_Ice_g_gmt4.grd'
+topography_file = './map_topo_files/ETOPO1_Ice_g_gmt4.grd'
 
 # county shapefile
 # https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.html
 # using the 5m (1:5,000,000) here
-county_shapefile = './cb_2021_us_county_5m/cb_2021_us_county_5m.shp'
+county_shapefile = './map_topo_files/cb_2021_us_county_5m/cb_2021_us_county_5m.shp'
 
 # Download roads shapefiles from: https://www.census.gov/cgi-bin/geo/shapefiles/index.php
 # primary and secondary roads by state
 
 # CO roads shapefile
-co_roads_shapefile = './tl_2021_08_prisecroads/tl_2021_08_prisecroads.shp'
+co_roads_shapefile = './map_topo_files/tl_2021_08_prisecroads/tl_2021_08_prisecroads.shp'
 # WY roads shapefile
-wy_roads_shapefile = './tl_2021_56_prisecroads/tl_2021_56_prisecroads.shp'
+wy_roads_shapefile = './map_topo_files/tl_2021_56_prisecroads/tl_2021_56_prisecroads.shp'
 # NE roads shapefile
-ne_roads_shapefile = './tl_2021_31_prisecroads/tl_2021_31_prisecroads.shp'
+ne_roads_shapefile = './map_topo_files/tl_2021_31_prisecroads/tl_2021_31_prisecroads.shp'
 
 all_road_shapefiles = [co_roads_shapefile, wy_roads_shapefile, ne_roads_shapefile]
-
-# datetimes in UTC
-start_datetime = datetime.datetime(2022, 6, 6, 18)
-end_datetime = datetime.datetime(2022, 6, 6, 19)
 
 # plotting options
 sonde_size=90
 sndcolors=[ 'cyan', 'magenta', 'k']
+
+figuresize=[15, 10]
 
 # Latitude/Longitude boundaries
 lonmin = -106
@@ -88,23 +101,8 @@ latmax = 42.5
 max_station_time = timedelta(hours=1)
 #max_station_time = timedelta(minutes=5)
 
-# What you want the first line of the title to be
-title_firstpart = r""+radarname+r" Reflectivity 0.5$^\circ$ and sonde locations"
-
-# TODO: Include option for other variables
-
-# options: 'reflectivity', 'velocity'
-var_to_plot = 'reflectivity'
-
-# minimum and maximum values to plot
-# make sure that these match the color table
-vmin, vmax = -30, 95
-#for velocity
-#vmin, vmax = -120, 120
-
-# for base reflectivity, this is usually 0, and for 
-# base velocity, this is usually 1. 
-sweep_number = 0
+# whether or not to include the elevation colorbar
+plot_elev_colorbar = False
 
 # reflectivity color table
 grctable_ref = """color: -30 116 78 173 147 141 117
@@ -141,13 +139,24 @@ color: 80 254 142 80 110 14 9
 color: 120 110 14 9
 """
 
+# title_firstpart: What you want the first line of the title to be
+# vmin, vmax: minimum and maximum values to plot
+#   make sure that these match the color table
+if var_to_plot == 'reflectivity':
+    title_firstpart = r""+radarname+r" Reflectivity 0.5$^\circ$ and sonde locations"
+    vmin, vmax = -30, 95
+    grctable = grctable_ref 
+    sweep = 0
+elif var_to_plot == 'velocity':
+    title_firstpart = r""+radarname+r" Velocity 0.5$^\circ$ and sonde locations"
+    vmin, vmax = -120, 120
+    grctable = grctable_vel
+    sweep = 1
 
-grctable = grctable_ref 
 
-# TODO: include a star where CPER is. 
 # location of main location (e.g., CPER) in (latitude, longitude) format
 # Set this to None to not plot it. 
-main_loc = (40.80985556259899, -104.7782733197491)
+main_loc = (40.80985556259899, -104.7782733197491) # this is SGRC
 # options for plotting the main location point
 main_loc_plot_opts = {
     'marker': '*',
@@ -155,6 +164,8 @@ main_loc_plot_opts = {
     'edgecolor': 'k',
     's': 40
 }
+
+# End user-defined options
 
 
 def daterange(start_date, end_date):
@@ -164,6 +175,8 @@ def daterange(start_date, end_date):
 
 def parse_sonde(sonde_folder):
     sonde_file = glob.glob(sonde_folder+'/*.dat')
+    if 'rawdata' in sonde_file[0]:
+        sonde_file.pop(0)
     sonde = pd.read_csv(open(sonde_file[0],
                                 errors='ignore'),
                           parse_dates=['Date+Time'], index_col=False)
@@ -367,7 +380,7 @@ def plot_radar_data(radar_file, metar_data, sondes, terrain_data):
         plt.register_cmap(cmap=wdbt)
 
 
-    fig = plt.figure(figsize=(15, 10))
+    fig = plt.figure(figsize=figuresize)
     proj = ccrs.LambertConformal(central_longitude=-104, central_latitude=40
                                     ,standard_parallels=[35])
     #proj = ccrs.PlateCarree()
@@ -383,7 +396,7 @@ def plot_radar_data(radar_file, metar_data, sondes, terrain_data):
     display = pyart.graph.RadarMapDisplay(radar)
 
 
-    display.plot_ppi_map(var_to_plot, sweep=sweep_number, vmin=vmin, vmax=vmax, ax=ax,         
+    display.plot_ppi_map(var_to_plot, sweep=sweep, vmin=vmin, vmax=vmax, ax=ax,         
                             mask_outside=True, cmap = 'wdtbtable', ticks=np.arange(vmin,vmax+1,10))
 
 
@@ -490,42 +503,51 @@ def plot_radar_data(radar_file, metar_data, sondes, terrain_data):
 
     for airsonde, sndcolor in zip(sondesinair, sndcolors):
         sndsca = ax.scatter(airsonde['Lon'],airsonde['Lat']
-                            ,marker='o', facecolor='cyan', edgecolor='k', s=sonde_size, transform=ccrs.PlateCarree())
+                            ,marker='o', facecolor=sndcolor, edgecolor='k', s=sonde_size, transform=ccrs.PlateCarree())
 
         legplots.append(sndsca)
-        legnames.append(airsonde['Name']+" @ "+str(round(airsonde['Alt']))+"m MSL")
+        legnames.append(airsonde['Name']+", "+str(round(airsonde['Alt']))+"m MSL")
 
     mountain_tz = pytz.timezone('America/Denver')
     curr_mountain_time = radar_time.replace(tzinfo=datetime.timezone.utc).astimezone(tz=mountain_tz)
     plt.title(title_firstpart+"\n"+
-                r"at "+radar_time.strftime("%m/%d/%y %H:%M:%S Z")+", "+curr_mountain_time.strftime("%H:%M:%S MT"), size=20)
+                r""+curr_mountain_time.strftime("%m/%d/%y %H:%M:%S MT"), size=20)
 
 
-    cbaxes = fig.add_axes([0.2, 0.05, 0.6, 0.02])  # This is the position for the colorbar
-    cb = plt.colorbar(tercont, cax = cbaxes, ticks=np.arange(1000,2751,250), orientation='horizontal')
-    #cbaxes.yaxis.set_ticks(np.arange(1000,2500,250))
-    #cbaxes.yaxis.set_ticks_position('left')
-    cb.set_label('Elevation (m)')
+    if plot_elev_colorbar == True:
+        cbaxes = fig.add_axes([0.2, 0.05, 0.6, 0.02])  # This is the position for the colorbar
+        cb = plt.colorbar(tercont, cax = cbaxes, ticks=np.arange(1000,2751,250), orientation='horizontal')
+        #cbaxes.yaxis.set_ticks(np.arange(1000,2500,250))
+        #cbaxes.yaxis.set_ticks_position('left')
+        cb.set_label('Elevation (m)')
 
+        leg = ax.legend(legplots,
+                    legnames,
+                    scatterpoints=1,
+                    loc='upper center',
+                    ncol=3,
+                    fontsize=14,
+                    bbox_to_anchor=(0.5, -0.14),
+                    fancybox=True, shadow=True)
 
-    
-    leg = ax.legend(legplots,
-                legnames,
-                scatterpoints=1,
-                loc='upper center',
-                ncol=3,
-                fontsize=14,
-                bbox_to_anchor=(0.5, -0.14),
-                fancybox=True, shadow=True)
-
-    
+    else:
+        leg = ax.legend(legplots,
+                    legnames,
+                    scatterpoints=1,
+                    loc='lower center',
+                    ncol=3,
+                    fontsize=12,
+                    bbox_to_anchor=(0.5, -0.1),
+                    fancybox=True, shadow=True)
 
 
     display.plot_point(radar.longitude['data'][0], radar.latitude['data'][0])
 
+    if not os.path.exists(plot_dir):
+        os.mkdir(plot_dir)
 
     plt.savefig(plot_dir+
-        radarname+"_ref05_"+radar_time.strftime("%y%m%d_%H%M%S")+
+        plot_prefix+"_"+radar_time.strftime("%y%m%d_%H%M%S")+
         ".png", dpi=160, bbox_inches="tight")
 
     plt.close(fig)
@@ -620,7 +642,7 @@ radfiles = get_radar_data(radarname, start_datetime, end_datetime, download_dir)
 sonde_list = glob.glob(sonde_dir+'/*')
 sondes = list()
 for sonde in sonde_list:
-    print(sonde)
+    #print(sonde)
     sondes.append((parse_sonde(sonde), sonde.split('/')[-1]))
 
 
