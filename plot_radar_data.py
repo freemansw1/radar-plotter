@@ -48,7 +48,7 @@ end_datetime = datetime.datetime(2022, 6, 19, 6)
 
 # download_dir: Where do you want to download the radar data to?
 # If this directory doesn't exist, the script will create it.
-download_dir='./'+radarname+"_data/"
+download_dir='./'+radarname+"_radar_data/"
 # plot_dir: Where do you want the plots to output to?
 #   If this directory doesn't exist, the script will create it.
 # plot_prefix: what prefix to add to the output file names

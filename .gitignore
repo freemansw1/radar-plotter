@@ -1,11 +1,5 @@
-# Radar data directories - not sure if there is a better
-#   way to generalize this - perhaps change the folder
-#   name to KXXX_radar_data instead. Don't want to just
-#   exclude *_data because there are also metar_data and
-#   sonde_data directories
-KCYS_data/
-KDEN_data/
-KGLD_data/
+# Radar data directories 
+K*_radar_data/
 
 # Exclude radar plot directories
 *_plots_*
