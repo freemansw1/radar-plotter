@@ -1,3 +1,16 @@
+# Radar data directories 
+K*_radar_data/
+
+# Exclude radar plot directories
+*_plots_*
+
+# Exclude contents of sonde_data and metar_data directories
+#   since those are on case-by-case basis
+# Also exclude map and topo files - too large
+metar_data/**
+sonde_data/**
+map_topo_files/**
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
