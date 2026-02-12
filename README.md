@@ -1,6 +1,6 @@
 Readme for plotting radar data
 
-Originally created by Sean Freeman, sean.freeman@colostate.edu
+Originally created by Sean Freeman, sean.freeman@uah.edu
 
 Parameters are up top, they should be fairly straightforward.
 
